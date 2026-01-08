@@ -2,39 +2,90 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoTarget Field Navigator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DEKUT Control Point Navigator</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        :root { --primary: #00bcd4; --bg: #1a1a1a; --panel: #2a2a2a; --text: #fff; }
+        :root { --primary: #00bcd4; --bg: #1a1a1a; --panel: #2a2a2a; --text: #fff; --accent: #ffeb3b; --success: #00e676; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
         
-        #container { display: flex; flex-direction: column; height: 100vh; }
-        #map { flex: 1; min-height: 50vh; z-index: 1; position: relative; }
-        #controls { background: var(--panel); padding: 20px; overflow-y: auto; border-top: 1px solid #444; flex: 1; }
+        #container { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+        
+        /* Map Section */
+        #map { flex: 1; min-height: 50%; width: 100%; z-index: 1; position: relative; }
+        
+        /* Controls Section */
+        #controls { 
+            background: var(--panel); 
+            padding: 15px; 
+            overflow-y: auto; 
+            border-top: 2px solid #444; 
+            flex: 1; 
+            min-height: 40%;
+            display: flex;
+            flex-direction: column;
+        }
 
-        /* Floating Layer Switcher */
-        .floating-layers {
+        /* -----------------------
+           ARRIVAL ALERT
+           ----------------------- */
+        #arrivalAlert {
             position: absolute;
-            top: 10px; right: 10px;
-            z-index: 1000;
-            background: rgba(20, 20, 20, 0.9);
+            top: 10px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 230, 118, 0.95);
+            color: #000;
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-weight: 800;
+            font-size: 14px;
+            z-index: 2000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 2px solid #fff;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popIn { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+        /* Floating Layers */
+        .floating-layers { position: absolute; top: 10px; right: 10px; z-index: 1000; }
+        .layer-toggle-btn {
+            background: rgba(0, 0, 0, 0.8);
+            color: var(--primary);
+            border: 2px solid #444;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            width: 40px; height: 40px;
+        }
+        .layer-list {
+            display: none;
+            background: rgba(20, 20, 20, 0.95);
             padding: 12px;
             border-radius: 6px;
             border: 1px solid #444;
+            margin-top: 5px;
             font-size: 13px;
             backdrop-filter: blur(5px);
+            min-width: 160px;
+            position: absolute;
+            right: 0;
         }
-        .floating-layers strong { display: block; margin-bottom: 8px; color: var(--primary); font-weight: 600; letter-spacing: 0.5px; }
-        .floating-layers label { display: block; margin: 6px 0; cursor: pointer; color: #ddd; }
-        .floating-layers input { margin-right: 8px; accent-color: var(--primary); }
+        .layer-list.active { display: block; }
+        .layer-list label { display: block; margin: 8px 0; cursor: pointer; color: #ddd; white-space: nowrap; }
+        .layer-list input { margin-right: 8px; accent-color: var(--primary); }
 
         /* Scanning Animation */
         .scan-marker-center {
-            width: 18px; height: 18px;
+            width: 16px; height: 16px;
             background: var(--primary);
             border: 2px solid #fff;
             border-radius: 50%;
@@ -45,7 +96,7 @@
             position: absolute;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            width: 18px; height: 18px;
+            width: 16px; height: 16px;
             border-radius: 50%;
             border: 2px solid var(--primary);
             opacity: 0;
@@ -53,106 +104,139 @@
             pointer-events: none;
         }
         @keyframes radarPing {
-            0% { width: 18px; height: 18px; opacity: 0.8; border-width: 3px; }
+            0% { width: 16px; height: 16px; opacity: 0.8; border-width: 3px; }
             100% { width: 100px; height: 100px; opacity: 0; border-width: 0px; }
         }
 
         /* Direction Arrow */
-        #arrow-container { margin: 20px 0; text-align: center; }
+        #arrow-container { margin: 5px 0; text-align: center; height: 60px; }
         #arrow { 
             display: inline-block; 
             transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); 
             filter: drop-shadow(0 0 10px rgba(0,188,212,0.3));
         }
+        #arrow svg { height: 100%; }
 
-        /* UI Elements */
-        h2 { font-size: 1.2rem; margin-bottom: 15px; font-weight: 600; color: #eee; }
-        .data-box { background: #333; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 3px solid var(--primary); }
+        h2 { font-size: 1.1rem; margin-bottom: 10px; font-weight: 600; color: #eee; }
         
+        .data-box { background: #333; padding: 10px; margin: 6px 0; border-radius: 6px; border-left: 3px solid #666; }
+        .data-box.live { border-left-color: var(--accent); }
+        .data-box.target { border-left-color: var(--primary); }
+
+        h3.box-label { color:#aaa; font-size:10px; text-transform:uppercase; margin-bottom:4px; letter-spacing: 1px;}
+        
+        .action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; padding-top: 10px; }
         button { 
-            margin: 5px 5px 5px 0; padding: 10px 16px; 
-            background: #0066cc; color: white; border: none; 
+            padding: 12px; background: #0066cc; color: white; border: none; 
             border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 0.5px;
-            transition: background 0.2s;
+            text-transform: uppercase; letter-spacing: 0.5px; transition: background 0.2s; width: 100%;
         }
         button:hover { background: #0052a3; }
         button.stop-btn { background: #d32f2f; }
-        button.stop-btn:hover { background: #b71c1c; }
         
-        select { 
-            margin: 10px 0; padding: 10px; background: #333; color: #fff; 
-            border: 1px solid #555; width: 100%; border-radius: 4px; 
-        }
+        select { margin: 10px 0; padding: 12px; background: #333; color: #fff; border: 1px solid #555; width: 100%; border-radius: 4px; font-size: 16px; }
         
         .hidden { display: none !important; }
-        .coords-display { font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85em; color: #bbb; line-height: 1.6; }
-        
+        .coords-display { font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85em; color: #eee; line-height: 1.4; }
+        .coords-row { display: flex; justify-content: space-between; }
         .status-msg { font-size: 0.9em; color: #888; margin-top: 10px; }
-        .error-msg { color: #ff5252; font-size: 0.9em; margin-top: 10px; }
+        .dist-tooltip { background: rgba(0,0,0,0.8); border: 1px solid #ffeb3b; color: #ffeb3b; font-weight: bold; font-size: 12px; border-radius: 4px; padding: 2px 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
 
         @media (min-width: 768px) {
             #container { flex-direction: row; }
-            #map { flex: 2; }
-            #controls { flex: 1; max-width: 400px; border-top: none; border-left: 1px solid #444; }
+            #map { flex: 2; height: 100vh; }
+            #controls { flex: 1; max-width: 400px; border-top: none; border-left: 1px solid #444; height: 100vh; }
+            #arrow-container { height: 100px; margin: 20px 0; }
         }
     </style>
 </head>
 <body>
     <div id="container">
         <div id="map">
+            <div id="arrivalAlert" class="hidden">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                <span id="arrivalText">ARRIVED</span>
+            </div>
+
             <div class="floating-layers">
-                <strong>Satellite Options</strong>
-                <label><input type="radio" name="basemap" value="esri" checked> Esri World Imagery</label>
-                <label><input type="radio" name="basemap" value="esri_clarity"> Esri Clarity (Beta)</label>
-                <hr style="border:0; border-top:1px solid #444; margin:5px 0">
-                <label><input type="radio" name="basemap" value="google"> Google Satellite</label>
-                <label><input type="radio" name="basemap" value="google_hybrid"> Google Hybrid</label>
-                <hr style="border:0; border-top:1px solid #444; margin:5px 0">
-                <label><input type="radio" name="basemap" value="osm"> OpenStreetMap</label>
+                <div class="layer-toggle-btn" onclick="toggleLayers()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                        <polyline points="2 17 12 22 22 17"></polyline>
+                        <polyline points="2 12 12 17 22 12"></polyline>
+                    </svg>
+                </div>
+                <div class="layer-list" id="layerList">
+                    <strong style="color:var(--primary); display:block; margin-bottom:8px;">Base Maps</strong>
+                    <label><input type="radio" name="basemap" value="esri" checked> Esri World Imagery</label>
+                    <label><input type="radio" name="basemap" value="esri_clarity"> Esri Clarity (Beta)</label>
+                    <hr style="border:0; border-top:1px solid #444; margin:5px 0">
+                    <label><input type="radio" name="basemap" value="google"> Google Satellite</label>
+                    <label><input type="radio" name="basemap" value="google_hybrid"> Google Hybrid</label>
+                    <hr style="border:0; border-top:1px solid #444; margin:5px 0">
+                    <label><input type="radio" name="basemap" value="osm"> OpenStreetMap</label>
+                </div>
             </div>
         </div>
         
         <div id="controls">
-            <h2>GeoTarget Navigator</h2>
+            <h2 id="appTitle">DEKUT Control Point Navigator</h2>
             
             <div id="setup">
+                <div class="data-box live">
+                    <h3 class="box-label" style="color:#ffeb3b">YOUR LIVE POSITION (ARC 1960)</h3>
+                    <div class="coords-display">
+                        <div class="coords-row"><span>Easting:</span> <span class="val-e" style="color:#ffeb3b">--</span></div>
+                        <div class="coords-row"><span>Northing:</span> <span class="val-n" style="color:#ffeb3b">--</span></div>
+                        <div class="coords-row" style="margin-top:5px; font-size:0.8em; color:#aaa">
+                            <span>Accuracy:</span> <span class="val-acc">--</span> m
+                        </div>
+                    </div>
+                </div>
+
                 <p id="loadingMsg" class="status-msg">Reading coordinate file...</p>
                 <div id="manualUpload" class="hidden">
-                    <p class="error-msg">Auto-load failed. Select file manually:</p>
-                    <input type="file" id="csvInput" accept=".csv" style="width:100%; margin-top:10px;">
+                    <p style="color:#ff5252; font-size:0.9em;">Auto-load failed. Upload manual:</p>
+                    <input type="file" id="csvInput" accept=".csv" style="width:100%; margin-top:5px;">
                 </div>
                 
                 <select id="targetSelect" class="hidden"></select>
-                <button id="startBtn" class="hidden" style="width:100%; background: var(--primary); color: #000;">Start Navigation</button>
-                <p id="status" class="status-msg">Initializing system...</p>
+                <button id="startBtn" class="hidden" style="width:100%; background: var(--primary); color: #000; margin-top:10px;">Start Navigation</button>
             </div>
 
-            <div id="navigation" class="hidden">
+            <div id="navigation" class="hidden" style="display:flex; flex-direction:column; height:100%;">
                 <div id="arrow-container">
                     <div id="arrow">
-                        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#00bcd4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#00bcd4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M12 2L2 22l10-3 10 3L12 2z" fill="rgba(0, 188, 212, 0.2)"></path>
                         </svg>
                     </div>
                 </div>
                 
-                <div class="data-box">
-                    <h3 style="color:#aaa; font-size:11px; text-transform:uppercase; margin-bottom:5px;">Distance to Target</h3>
-                    <h1 id="distDisplay" style="font-size: 36px; font-weight:300;">--</h1>
+                <div class="data-box target">
+                    <h3 class="box-label">Distance to Target</h3>
+                    <h1 id="distDisplay" style="font-size: 28px; font-weight:300;">--</h1>
                 </div>
-                
-                <div class="data-box">
-                    <p><strong><span id="targetName">--</span></strong></p>
-                    <div class="coords-display" style="margin-top:10px;">
-                        E: <span id="targetE">--</span><br>
-                        N: <span id="targetN">--</span><br>
-                        H: <span id="targetH">--</span> m
+
+                <div class="data-box live">
+                    <h3 class="box-label" style="color:#ffeb3b">YOUR POSITION</h3>
+                    <div class="coords-display">
+                        <div class="coords-row"><span>E:</span> <span class="val-e" style="color:#ffeb3b">--</span></div>
+                        <div class="coords-row"><span>N:</span> <span class="val-n" style="color:#ffeb3b">--</span></div>
+                        <div class="coords-row"><span>Acc:</span> <span class="val-acc">--</span> m</div>
                     </div>
-                    <p style="margin-top:10px; font-size:12px; color:#666">GPS Accuracy: <span id="gpsAccuracy">--</span> m</p>
                 </div>
                 
-                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                <div class="data-box">
+                    <h3 class="box-label">Target</h3>
+                    <p style="margin-bottom:5px; font-size:0.9rem;"><strong><span id="targetName">--</span></strong></p>
+                    <div class="coords-display" style="color:#bbb">
+                        <div class="coords-row"><span>E:</span> <span id="targetE">--</span></div>
+                        <div class="coords-row"><span>N:</span> <span id="targetN">--</span></div>
+                    </div>
+                </div>
+                
+                <div class="action-buttons">
                     <button onclick="centerOnUser()">Locate Me</button>
                     <button onclick="centerOnTarget()">Target</button>
                     <button onclick="fitBoth()">View Both</button>
@@ -163,16 +247,23 @@
     </div>
 
     <script>
-        // --- CONFIG ---
+        function toggleLayers() {
+            document.getElementById('layerList').classList.toggle('active');
+        }
+        document.addEventListener('click', function(e) {
+            if (!document.querySelector('.floating-layers').contains(e.target)) {
+                document.getElementById('layerList').classList.remove('active');
+            }
+        });
+
         proj4.defs("EPSG:21037", "+proj=utm +zone=37 +south +ellps=clrk80 +towgs84=-160,-6,-302,0,0,0,0 +units=m +no_defs");
         const arc1960 = "EPSG:21037";
         const wgs84 = "EPSG:4326";
         
-        let map, userMarker, targetMarker, lineToTarget;
+        let map, userMarker, targetMarker, lineToTarget, bufferCircle;
         let targets = [], selectedTarget = null;
-        let currentHeading = 0;
+        let currentHeading = 0, currentPosLL = null;
 
-        // --- MAP INITIALIZATION ---
         function initMap() {
             map = L.map('map', { zoomControl: false }).setView([-1.286389, 36.817223], 12);
             L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -192,13 +283,14 @@
                     layers[e.target.value].addTo(map);
                 });
             });
+
+            startGPS();
         }
         initMap();
 
-        // --- CSV HANDLING ---
         fetch('Combined_Coordinate_List.csv')
             .then(r => { if(!r.ok) throw new Error(); return r.text(); })
-            .then(txt => { document.getElementById('loadingMsg').innerText = "File loaded successfully"; document.getElementById('loadingMsg').style.color = '#4caf50'; processCSV(txt); })
+            .then(txt => { document.getElementById('loadingMsg').innerText = "System Ready"; document.getElementById('loadingMsg').style.color = '#4caf50'; processCSV(txt); })
             .catch(() => {
                 document.getElementById('loadingMsg').classList.add('hidden');
                 document.getElementById('manualUpload').classList.remove('hidden');
@@ -212,7 +304,7 @@
         function processCSV(text) {
             const lines = text.trim().split('\n');
             targets = [];
-            for (let i = 1; i < lines.length; i++) {
+            for (let i = 0; i < lines.length; i++) {
                 const p = lines[i].split(',');
                 if (p.length >= 3) {
                     try {
@@ -230,10 +322,7 @@
                 const sel = document.getElementById('targetSelect');
                 sel.innerHTML = '';
                 targets.forEach((t, i) => {
-                    // Only display Name in Dropdown
                     sel.innerHTML += `<option value="${i}">${t.name}</option>`;
-                    
-                    // Small preview dot with Detailed Popup
                     L.circleMarker([t.lat, t.lon], { radius: 4, color: '#00bcd4', fillColor: '#1a1a1a', fillOpacity: 1, weight: 1 })
                      .bindPopup(`
                         <div style="font-family: Consolas, monospace; font-size:13px; min-width:120px;">
@@ -247,27 +336,26 @@
                 });
                 sel.classList.remove('hidden');
                 document.getElementById('startBtn').classList.remove('hidden');
-                document.getElementById('status').innerText = `${targets.length} control points ready`;
                 
                 const bounds = targets.map(t => [t.lat, t.lon]);
                 if(bounds.length) map.fitBounds(bounds, {padding:[50,50]});
             }
         }
 
-        // --- NAVIGATION ---
         document.getElementById('startBtn').addEventListener('click', () => {
             selectedTarget = targets[document.getElementById('targetSelect').value];
             document.getElementById('setup').classList.add('hidden');
-            document.getElementById('navigation').classList.remove('hidden');
+            
+            const nav = document.getElementById('navigation');
+            nav.classList.remove('hidden');
+            if(window.innerWidth < 768) document.getElementById('appTitle').classList.add('hidden');
             
             document.getElementById('targetName').innerText = selectedTarget.name;
             document.getElementById('targetE').innerText = selectedTarget.E.toFixed(2);
             document.getElementById('targetN').innerText = selectedTarget.N.toFixed(2);
-            document.getElementById('targetH').innerText = selectedTarget.H.toFixed(2);
 
             if(targetMarker) map.removeLayer(targetMarker);
             
-            // Professional Vector Target Marker
             const targetIcon = L.divIcon({
                 className: '',
                 html: `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));">
@@ -280,31 +368,27 @@
             });
 
             targetMarker = L.marker([selectedTarget.lat, selectedTarget.lon], { icon: targetIcon }).addTo(map);
+            targetMarker.bindPopup(`<strong>${selectedTarget.name}</strong>`).openPopup();
             
-            // Target popup also shows detailed data
-            targetMarker.bindPopup(`
-                <div style="font-family: Consolas, monospace; font-size:13px;">
-                    <strong>🎯 ${selectedTarget.name}</strong>
-                    <hr style="margin:4px 0; border:0; border-top:1px solid #ccc;">
-                    E: ${selectedTarget.E.toFixed(2)}<br>
-                    N: ${selectedTarget.N.toFixed(2)}<br>
-                    H: ${selectedTarget.H.toFixed(2)}
-                </div>
-            `).openPopup();
-
-            startGPS();
+            if(currentPosLL) {
+                updateNavigationDashboard(currentPosLL);
+                fitBoth();
+            }
         });
 
-        // --- GPS ---
         function startGPS() {
-            if (!navigator.geolocation) return alert("GPS not available");
-            
+            if (!navigator.geolocation) return console.warn("GPS not available");
             navigator.geolocation.watchPosition(pos => {
                 const { latitude: lat, longitude: lon, accuracy: acc, speed: spd, heading: hdg } = pos.coords;
                 const posLL = [lat, lon];
+                currentPosLL = posLL;
                 
-                document.getElementById('gpsAccuracy').innerText = Math.round(acc);
-                if(spd > 1 && hdg !== null) currentHeading = hdg;
+                try {
+                    const myArcCoords = proj4(wgs84, arc1960, [lon, lat]);
+                    document.querySelectorAll('.val-e').forEach(el => el.innerText = myArcCoords[0].toFixed(2));
+                    document.querySelectorAll('.val-n').forEach(el => el.innerText = myArcCoords[1].toFixed(2));
+                    document.querySelectorAll('.val-acc').forEach(el => el.innerText = Math.round(acc));
+                } catch(err) {}
 
                 if (!userMarker) {
                     const scanIcon = L.divIcon({
@@ -313,18 +397,33 @@
                         iconSize: [20, 20], iconAnchor: [10, 10]
                     });
                     userMarker = L.marker(posLL, { icon: scanIcon }).addTo(map);
+                    // 5M BUFFER CIRCLE around user
+                    bufferCircle = L.circle(posLL, { radius: 5, color: '#00e676', fill: false, weight: 2, dashArray: '5,5' }).addTo(map);
+                    
+                    if (!selectedTarget) map.setView(posLL, 16);
                 } else {
                     userMarker.setLatLng(posLL);
+                    if(bufferCircle) bufferCircle.setLatLng(posLL);
                 }
 
-                if(lineToTarget) map.removeLayer(lineToTarget);
-                lineToTarget = L.polyline([posLL, [selectedTarget.lat, selectedTarget.lon]], { color: '#ffeb3b', dashArray: '8,8', weight: 2.5 }).addTo(map);
+                if(spd > 1 && hdg !== null) currentHeading = hdg;
+                if (selectedTarget) updateNavigationDashboard(posLL, lat, lon);
 
-                const dist = map.distance(posLL, [selectedTarget.lat, selectedTarget.lon]);
-                document.getElementById('distDisplay').innerText = dist < 1000 ? Math.round(dist)+" m" : (dist/1000).toFixed(2)+" km";
+                // --- CHECK BUFFER ARRIVAL (ANY POINT) ---
+                let found = null;
+                // Check distance from USER CENTER to TARGET CENTER
+                targets.forEach(t => {
+                    const dist = map.distance(posLL, [t.lat, t.lon]);
+                    if(dist <= 5) found = t.name;
+                });
 
-                const bearing = getBearing(lat, lon, selectedTarget.lat, selectedTarget.lon);
-                document.getElementById('arrow').style.transform = `rotate(${bearing - currentHeading}deg)`;
+                const alertBox = document.getElementById('arrivalAlert');
+                if(found) {
+                    document.getElementById('arrivalText').innerText = "YOU ARE AT: " + found;
+                    alertBox.classList.remove('hidden');
+                } else {
+                    alertBox.classList.add('hidden');
+                }
 
             }, err => console.warn(err), { enableHighAccuracy: true });
 
@@ -336,7 +435,22 @@
             }
         }
 
-        // --- UTILS ---
+        function updateNavigationDashboard(posLL, lat = posLL[0], lon = posLL[1]) {
+            if(!selectedTarget) return;
+            if(lineToTarget) map.removeLayer(lineToTarget);
+            
+            // MEASURE DISTANCE FROM CENTER TO CENTER
+            const dist = map.distance(posLL, [selectedTarget.lat, selectedTarget.lon]);
+            const distText = dist < 1000 ? Math.round(dist)+" m" : (dist/1000).toFixed(2)+" km";
+            
+            lineToTarget = L.polyline([posLL, [selectedTarget.lat, selectedTarget.lon]], { color: '#ffeb3b', dashArray: '8,8', weight: 3 }).addTo(map);
+            lineToTarget.bindTooltip(distText, {permanent: true, direction: 'center', className: 'dist-tooltip'}).openTooltip();
+
+            document.getElementById('distDisplay').innerText = distText;
+            const bearing = getBearing(lat, lon, selectedTarget.lat, selectedTarget.lon);
+            document.getElementById('arrow').style.transform = `rotate(${bearing - currentHeading}deg)`;
+        }
+
         function getBearing(lat1, lon1, lat2, lon2) {
             const toRad = x => x * Math.PI / 180;
             const toDeg = x => x * 180 / Math.PI;
